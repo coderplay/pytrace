@@ -9,6 +9,8 @@ from pytrace.agent.registry import SessionRegistry
 from pytrace.core.decorators import get_context, clear_context
 
 
+DEBUGGER_ID = sys.monitoring.DEBUGGER_ID
+
 class Tracer:
     """Tracer using sys.monitoring for function entry/exit/exception events."""
     
@@ -20,7 +22,6 @@ class Tracer:
             registry: Session registry to query for active scripts
         """
         self.registry = registry
-        self.tool_id = sys.monitoring.use_tool_id("pytrace")
         self._lock = threading.RLock()
         self._enabled = False
         
@@ -35,19 +36,22 @@ class Tracer:
             if self._enabled:
                 return
             
+            sys.monitoring.use_tool_id(DEBUGGER_ID, "pytrace")
             # Register callbacks
             sys.monitoring.register_callback(
-                self.tool_id, self.PY_START, self._on_function_start
+                DEBUGGER_ID, self.PY_START, self._on_function_start
             )
             sys.monitoring.register_callback(
-                self.tool_id, self.PY_RETURN, self._on_function_return
+                DEBUGGER_ID, self.PY_RETURN, self._on_function_return
             )
             sys.monitoring.register_callback(
-                self.tool_id, self.PY_THROW, self._on_function_exception
+                DEBUGGER_ID, self.PY_THROW, self._on_function_exception
             )
             
             # Enable events
-            sys.monitoring.set_events(self.tool_id, self.PY_START | self.PY_RETURN | self.PY_THROW)
+            sys.monitoring.set_events(DEBUGGER_ID, self.PY_START | self.PY_RETURN | self.PY_THROW)
+
+            sys.monitoring.restart_events()
             
             self._enabled = True
     
@@ -58,12 +62,14 @@ class Tracer:
                 return
             
             # Disable events
-            sys.monitoring.set_events(self.tool_id, 0)
+            sys.monitoring.set_events(DEBUGGER_ID, 0)
             
             # Unregister callbacks
-            sys.monitoring.register_callback(self.tool_id, self.PY_START, None)
-            sys.monitoring.register_callback(self.tool_id, self.PY_RETURN, None)
-            sys.monitoring.register_callback(self.tool_id, self.PY_THROW, None)
+            sys.monitoring.register_callback(DEBUGGER_ID, self.PY_START, None)
+            sys.monitoring.register_callback(DEBUGGER_ID, self.PY_RETURN, None)
+            sys.monitoring.register_callback(DEBUGGER_ID, self.PY_THROW, None)
+            
+            sys.monitoring.free_tool_id(DEBUGGER_ID)
             
             self._enabled = False
     
