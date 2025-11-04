@@ -1,0 +1,32 @@
+[project]
+name = "pytrace"
+version = "0.1.0"
+description = "Dynamic tracing tool for Python programs"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydevd>=3.0.0",
+    "protobuf>=4.25.0",
+    "click>=8.1.0",
+    "pytest>=7.4.0",
+]
+
+[project.scripts]
+pytrace = "pytrace.client.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+

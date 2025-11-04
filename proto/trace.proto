@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package pytrace;
+
+// Request to start tracing with a script
+message TraceRequest {
+    string script_content = 1;  // The PyTrace script content
+    repeated string args = 2;    // Arguments passed to the script
+}
+
+// Response to TraceRequest
+message TraceResponse {
+    oneof result {
+        string session_id = 1;  // Session ID if successful
+        string error = 2;       // Error message if failed
+    }
+}
+
+// Event streamed back to client from agent
+message TraceEvent {
+    string session_id = 1;      // Session ID this event belongs to
+    string event_type = 2;       // Type of event (entry, return, exception, timer, print)
+    string data = 3;             // Event data (JSON or text)
+}
+
+// Request types for client-agent communication
+message Request {
+    oneof request_type {
+        TraceRequest trace_request = 1;
+        string exit_request = 2;  // Session ID to exit
+        string event_request = 3; // Request events
+    }
+}
+
+// Response types for client-agent communication
+message Response {
+    oneof response_type {
+        TraceResponse trace_response = 1;
+        TraceEvent trace_event = 2;
+        string status = 3;       // Status message
+        string data = 4;         // Data response
+    }
+}
+
