@@ -6,11 +6,11 @@ import pytrace
 latencies = []
 counts = {}
 
-@function_entry("test.function")
+@function_entry("queue.Queue.put")
 def on_entry(args):
     ctx["start"] = now()
 
-@function_return("test.function")
+@function_return("queue.Queue.put")
 def on_return(retval):
     duration = (now() - ctx["start"]) * 1000
     latencies.append(duration)

@@ -5,6 +5,8 @@ import threading
 import struct
 import uuid
 import logging
+import sys
+import os
 from typing import Optional, Dict, Callable, Union
 import json
 
@@ -58,7 +60,7 @@ class SocketServer:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.socket.bind((self.host, self.port))
-            self.socket.listen(10)
+            self.socket.listen()
             self.running = True
             logger.info(f"Socket server listening on {self.host}:{self.port}")
         
@@ -263,19 +265,18 @@ class SocketServer:
             handlers = executor.execute(script_content, args)
             logger.debug(f"Script executed, handlers registered: {list(handlers.keys())}")
             
-            # Register session in registry (using internal method to set session_id)
+            # Register session in registry
             with self._lock:
                 # Store executor first
                 self.executors[session_id] = executor
-                # Register session
-                self.registry._sessions[session_id] = {
-                    'script_content': script_content,
-                    'args': args,
-                    'handlers': handlers,
-                    'globals': executor.globals,
-                    'namespace': executor.namespace,
-                    'executor': executor,  # Store executor reference for tracer
-                }
+                # Register session using proper register method
+                self.registry.register(
+                    script_content=script_content,
+                    args=args,
+                    handlers=handlers,
+                    executor=executor,
+                    session_id=session_id
+                )
             
             logger.info(f"Session {session_id} registered successfully, total sessions: {self.registry.count()}")
             return {

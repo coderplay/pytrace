@@ -91,6 +91,9 @@ def main():
                        help=f'Socket server port (default: {DEFAULT_PORT})')
     parser.add_argument('--host', type=str, default=DEFAULT_HOST,
                        help=f'Socket server host (default: {DEFAULT_HOST})')
+    parser.add_argument('--log-level', type=str, default='INFO',
+                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                       help='Log level for agent in target process (default: INFO)')
     
     args = parser.parse_args()
     
@@ -128,7 +131,7 @@ def main():
         # Check if server exists, if not attach
         if not check_server_exists(args.port, args.host):
             print(f"Attaching to process {args.pid}...", file=sys.stderr)
-            attach_or_connect(args.pid, args.port, args.host)
+            attach_or_connect(args.pid, args.port, args.host, log_level=args.log_level)
             
             # Wait a bit for server to start
             import time

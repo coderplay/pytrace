@@ -2,12 +2,35 @@
 
 import os
 import sys
+import logging
 from typing import Optional
 
+# Suppress pydevd logging by default - MUST be set before importing pydevd
+# Set environment variables to disable warnings and reduce log verbosity
+if 'PYDEVD_DISABLE_FILE_VALIDATION' not in os.environ:
+    os.environ['PYDEVD_DISABLE_FILE_VALIDATION'] = '1'
+if 'PYDEVD_LOG_LEVEL' not in os.environ:
+    os.environ['PYDEVD_LOG_LEVEL'] = 'ERROR'
+# Suppress pydevd internal messages
+if 'PYDEVD_DEBUG' not in os.environ:
+    os.environ['PYDEVD_DEBUG'] = '0'
+
+# Now import pydevd after setting environment variables
 import pydevd
 from pydevd_attach_to_process import add_code_to_python_process
 
-def attach_to_process(pid: int, port: int = 5678, host: str = 'localhost') -> bool:
+# Also configure pydevd logger to reduce output
+pydevd_logger = logging.getLogger('pydevd')
+pydevd_logger.setLevel(logging.ERROR)
+pydevd_logger.propagate = False
+
+# Suppress other pydevd-related loggers
+for logger_name in ['pydevd_attach_to_process', 'pydevd_attach_to_process.add_code_to_python_process']:
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.ERROR)
+    logger.propagate = False
+
+def attach_to_process(pid: int, port: int = 5678, host: str = 'localhost', log_level: str = 'INFO') -> bool:
     """
     Attach to a running Python process and inject the PyTrace agent.
     
@@ -15,6 +38,7 @@ def attach_to_process(pid: int, port: int = 5678, host: str = 'localhost') -> bo
         pid: Process ID of target Python process
         port: Port for socket server
         host: Host for socket server
+        log_level: Log level for agent logger (default: INFO)
     
     Returns:
         True if attachment successful, False otherwise
@@ -26,7 +50,6 @@ def attach_to_process(pid: int, port: int = 5678, host: str = 'localhost') -> bo
         # Get the path to pytrace package
         import pytrace
         pytrace_path = os.path.dirname(os.path.dirname(pytrace.__file__))
-        print(f"PyTrace path: {pytrace_path}")
         assert os.path.exists(pytrace_path), f"PyTrace path {pytrace_path} does not exist"
         
         # Code to inject into target process
@@ -36,6 +59,23 @@ def attach_to_process(pid: int, port: int = 5678, host: str = 'localhost') -> bo
         code_to_execute = f"""
 import sys
 import threading
+import logging
+
+# Configure logging for PyTrace agent
+log_level = {repr(log_level)}
+try:
+    level = getattr(logging, log_level.upper(), logging.INFO)
+except AttributeError:
+    level = logging.INFO
+
+# Configure logger for pytrace.agent modules
+pytrace_logger = logging.getLogger('pytrace.agent')
+if not pytrace_logger.handlers:
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter('[PyTrace] %(levelname)s: %(name)s: %(message)s'))
+    pytrace_logger.addHandler(handler)
+    pytrace_logger.setLevel(level)
+    # Allow child loggers (e.g., pytrace.agent.socket_server) to propagate to this handler
 
 pytrace_path = {repr(pytrace_path)}
 sys.path.insert(0, pytrace_path)
@@ -74,12 +114,60 @@ server_thread.start()
             )
         
         # Use pydevd attach mechanism to inject code
-        add_code_to_python_process.run_python_code(
-            pid,
-            python_code=injection_code,
-            connect_debugger_tracing=False,
-            show_debug_info=0,
-        )
+        # Suppress verbose output from pydevd/lldb
+        # Note: lldb subprocess output is hard to suppress completely,
+        # but we redirect Python-level output and set environment variables
+        import subprocess
+        
+        # Monkey patch subprocess.Popen to redirect lldb output to devnull
+        original_popen = subprocess.Popen
+        devnull_fd = None
+        
+        def quiet_popen(*args, **kwargs):
+            # Redirect stdout/stderr for subprocess calls (like lldb)
+            if 'stdout' not in kwargs:
+                kwargs['stdout'] = devnull_fd
+            if 'stderr' not in kwargs:
+                kwargs['stderr'] = devnull_fd
+            return original_popen(*args, **kwargs)
+        
+        try:
+            # Redirect Python-level output and subprocess output
+            with open(os.devnull, 'w') as devnull, open(os.devnull, 'w') as devnull_subproc:
+                devnull_fd = devnull_subproc
+                old_stdout = sys.stdout
+                old_stderr = sys.stderr
+                try:
+                    sys.stdout = devnull
+                    sys.stderr = devnull
+                    # Temporarily patch subprocess to suppress lldb output
+                    subprocess.Popen = quiet_popen
+                    try:
+                        add_code_to_python_process.run_python_code(
+                            pid,
+                            python_code=injection_code,
+                            connect_debugger_tracing=False,
+                            show_debug_info=0,
+                        )
+                    finally:
+                        subprocess.Popen = original_popen
+                        sys.stdout = old_stdout
+                        sys.stderr = old_stderr
+                except Exception:
+                    # Restore on error
+                    subprocess.Popen = original_popen
+                    sys.stdout = old_stdout
+                    sys.stderr = old_stderr
+                    raise
+        except Exception:
+            # If redirection fails, try without it
+            subprocess.Popen = original_popen
+            add_code_to_python_process.run_python_code(
+                pid,
+                python_code=injection_code,
+                connect_debugger_tracing=False,
+                show_debug_info=0,
+            )
         
         return True
     except Exception as e:
@@ -110,7 +198,7 @@ def check_server_exists(port: int = 5678, host: str = 'localhost', timeout: floa
         return False
 
 
-def attach_or_connect(pid: int, port: int = 5678, host: str = 'localhost') -> bool:
+def attach_or_connect(pid: int, port: int = 5678, host: str = 'localhost', log_level: str = 'INFO') -> bool:
     """
     Attach to process if server doesn't exist, otherwise just connect.
     
@@ -118,6 +206,7 @@ def attach_or_connect(pid: int, port: int = 5678, host: str = 'localhost') -> bo
         pid: Process ID
         port: Port for socket server
         host: Host for socket server
+        log_level: Log level for agent logger (default: INFO)
     
     Returns:
         True if server is available (either existed or was created)
@@ -127,4 +216,4 @@ def attach_or_connect(pid: int, port: int = 5678, host: str = 'localhost') -> bo
         return True
     
     # Attach to process
-    return attach_to_process(pid, port, host)
+    return attach_to_process(pid, port, host, log_level)

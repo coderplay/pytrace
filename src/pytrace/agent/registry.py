@@ -12,7 +12,8 @@ class SessionRegistry:
         self._sessions: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.RLock()
     
-    def register(self, script_content: str, args: list, handlers: Dict[str, Any]) -> str:
+    def register(self, script_content: str, args: list, handlers: Dict[str, Any], 
+                 executor: Optional[Any] = None, session_id: Optional[str] = None) -> str:
         """
         Register a new tracing session.
         
@@ -20,11 +21,14 @@ class SessionRegistry:
             script_content: The script content
             args: Script arguments
             handlers: Compiled handlers from the script
+            executor: Optional executor instance for this session
+            session_id: Optional session ID (if not provided, a new UUID will be generated)
         
         Returns:
             Session ID
         """
-        session_id = str(uuid.uuid4())
+        if session_id is None:
+            session_id = str(uuid.uuid4())
         
         with self._lock:
             self._sessions[session_id] = {
@@ -34,6 +38,8 @@ class SessionRegistry:
                 'globals': handlers.get('globals', {}),
                 'namespace': handlers.get('namespace', {}),
             }
+            if executor is not None:
+                self._sessions[session_id]['executor'] = executor
         
         return session_id
     
